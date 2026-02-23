@@ -3,14 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chef Dashboard Pro (Order Pin Sync)</title>
+    <title>Chef Dashboard - Order Pin Live</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Prompt:wght@400;700;900&display=swap');
         body { font-family: 'Prompt', sans-serif; background-color: #020617; }
         .bill-card { 
-            min-width: 280px; max-width: 320px;
+            min-width: 300px; max-width: 350px;
             background: #1e293b; border-top: 10px solid #3b82f6;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
             animation: fadeIn 0.4s ease-out;
         }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
@@ -18,46 +19,51 @@
 </head>
 <body class="text-white p-4">
     <div class="max-w-full mx-auto">
-        <div class="flex justify-between items-center mb-6 bg-slate-800 p-4 rounded-2xl border-b-4 border-blue-500 shadow-2xl">
+        <div class="flex justify-between items-center mb-6 bg-slate-800 p-5 rounded-2xl border-b-4 border-blue-500 shadow-2xl">
             <div>
-                <h1 class="text-2xl font-black text-blue-400 uppercase">Kitchen Dashboard</h1>
-                <p id="status" class="text-green-400 font-bold italic text-sm">● WAITING FOR ORDER PIN...</p>
+                <h1 class="text-2xl font-black text-blue-400 uppercase tracking-tighter">Kitchen Live Monitor</h1>
+                <p id="status" class="text-green-400 font-bold italic text-sm animate-pulse">● READY: WAITING FOR ORDER PIN...</p>
             </div>
-            <button onclick="clearOrders()" class="bg-red-600/20 text-red-500 px-4 py-2 rounded-lg font-bold border border-red-500 hover:bg-red-600 hover:text-white transition-all">CLEAR ALL</button>
+            <div class="flex gap-4">
+                <button onclick="clearOrders()" class="text-red-500 font-bold text-sm border border-red-500/50 px-3 py-1 rounded-lg hover:bg-red-500/10">ล้างจอ</button>
+                <button onclick="localStorage.removeItem('chef_api_key'); location.reload();" class="text-slate-400 font-bold text-sm border border-slate-600 px-3 py-1 rounded-lg">แก้ KEY</button>
+            </div>
         </div>
 
-        <div id="orderQueue" class="flex flex-wrap gap-6 justify-start items-start pb-32">
-            <div id="placeholder" class="text-slate-600 italic text-xl p-10 w-full text-center border-2 border-dashed border-slate-800 rounded-3xl">
-                ยังไม่มีออเดอร์เข้า... (ระบบกำลังดักจับข้อมูลจากหน้า Order Pin)
+        <div id="orderQueue" class="flex flex-wrap gap-6 justify-start items-start pb-40">
+            <div id="placeholder" class="text-slate-700 italic text-2xl p-20 w-full text-center border-4 border-dashed border-slate-900 rounded-3xl">
+                ระบบพร้อมทำงาน... กรุณากดสั่งอาหารในหน้า Order Pin
             </div>
         </div>
     </div>
 
     <script>
-        // ใส่ API Key ของเชฟตรงนี้ (หรือให้ระบบถามตอนแรก)
         let API_KEY = localStorage.getItem('chef_api_key') || "";
-        const MODEL = "gemini-2.5-flash";
+        const MODEL = "gemini-1.5-flash"; // ใช้ตัวล่าสุดเพื่อความเร็ว
 
-        // 1. ระบบดักฟังข้อมูลข้าม Tab (หัวใจสำคัญ)
+        // 1. ตัวดักฟังข้อมูลข้าม Tab จาก Tampermonkey
         window.addEventListener('storage', (event) => {
             if (event.key === 'latest_order_pin' && event.newValue) {
                 const data = JSON.parse(event.newValue);
                 processOrderData(data);
-                // ล้างข้อมูลเก่าเพื่อให้พร้อมรับออเดอร์ซ้ำได้
+                // ล้างค่าออกทันทีเพื่อพร้อมรับครั้งถัดไป
                 localStorage.removeItem('latest_order_pin');
             }
         });
 
-        async function processOrderData(data) {
+        async function processOrderData(jsonData) {
             if(!API_KEY) {
-                API_KEY = prompt("กรุณาใส่ API Key ก่อนครับเชฟ:");
-                if(API_KEY) localStorage.setItem('chef_api_key', API_KEY);
+                const key = prompt("กรุณาใส่ API Key ของเชฟก่อนครับ:");
+                if(key) {
+                    localStorage.setItem('chef_api_key', key.trim());
+                    location.reload();
+                }
                 return;
             }
 
             const status = document.getElementById('status');
-            status.innerText = "🌀 PROCESSING NEW ORDER...";
-            status.className = "text-yellow-400 font-bold italic animate-pulse";
+            status.innerText = "🌀 ดึงข้อมูลจาก ORDER PIN...";
+            status.className = "text-yellow-400 font-bold italic animate-bounce";
 
             try {
                 const response = await fetch(`https://generativelanguage.googleapis.com/v1/models/${MODEL}:generateContent?key=${API_KEY}`, {
@@ -65,44 +71,56 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         contents: [{ parts: [{ 
-                            text: `สรุปบิล: บรรทัดแรกเลขโต๊ะ, บรรทัดต่อๆไปคือเมนูและคำสั่งพิเศษให้อยู่บรรทัดเดียวกัน ห้ามใส่เครื่องหมาย () และ + ข้อมูลคือ: ${JSON.stringify(data)}` 
+                            text: `นี่คือข้อมูล JSON จาก Order Pin ช่วยสรุปรายการอาหารที่ 'ยังไม่ได้ปิดบิล' ทั้งหมด 
+                            โดยแยกเป็นการ์ดละ 1 โต๊ะ: 
+                            - บรรทัดแรก: เลขโต๊ะ (Table Number) 
+                            - บรรทัดต่อๆไป: รายการอาหาร จำนวน และคำสั่งพิเศษ (ห้ามมี () และ + ให้เขียนต่อกันบรรทัดเดียว)
+                            ข้อมูล: ${JSON.stringify(jsonData)}` 
                         }] }]
                     })
                 });
+
                 const resData = await response.json();
                 const result = resData.candidates[0].content.parts[0].text.trim();
                 
-                addOrderToUI(result.replace(/[()+]/g, ' '));
-                status.innerText = "● READY - WAITING FOR NEXT...";
+                // เคลียร์หน้าจอถ้ามีออเดอร์ใหม่มา (หรือจะให้ต่อท้ายก็ได้)
+                const placeholder = document.getElementById('placeholder');
+                if (placeholder) placeholder.remove();
+
+                // แยกข้อมูลโต๊ะ (กรณี AI ส่งมาหลายโต๊ะพร้อมกัน)
+                const tables = result.split(/โต๊ะ|Table/gi).filter(t => t.trim().length > 5);
+                tables.forEach(tableInfo => {
+                    addOrderToUI("โต๊ะ" + tableInfo.replace(/[()+]/g, ' '));
+                });
+
+                status.innerText = "● READY: ลิงก์ข้อมูลสำเร็จ";
                 status.className = "text-green-400 font-bold italic";
             } catch (e) {
-                status.innerText = "❌ ERROR PROCESSING DATA";
+                status.innerText = "❌ ERROR: ตรวจสอบ API KEY หรือเน็ต";
                 console.error(e);
             }
         }
 
         function addOrderToUI(text) {
             const queue = document.getElementById('orderQueue');
-            const placeholder = document.getElementById('placeholder');
-            if (placeholder) placeholder.remove();
-
             const time = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            
             const lines = text.split('\n').filter(l => l.trim() !== "");
-            const table = lines[0];
-            const items = lines.slice(1).join('<br>');
+            const tableNo = lines[0];
+            const menuItems = lines.slice(1).join('<br>');
 
             const card = document.createElement('div');
             card.className = "bill-card p-6 rounded-2xl shadow-2xl relative flex-none";
             card.innerHTML = `
-                <div class="text-4xl font-black text-yellow-400 border-b border-slate-600 mb-3 pb-2 uppercase">${table}</div>
-                <div class="text-2xl font-bold text-white leading-snug">${items}</div>
-                <div class="text-xs text-slate-500 mt-4 font-bold text-right">${time}</div>
-                <button onclick="this.parentElement.remove()" class="absolute -top-3 -right-3 bg-red-600 w-10 h-10 rounded-full flex items-center justify-center font-bold text-white shadow-lg hover:scale-110 transition-all">✕</button>
+                <div class="text-4xl font-black text-yellow-400 border-b-2 border-slate-700 mb-3 pb-2 uppercase">${tableNo}</div>
+                <div class="text-2xl font-bold text-white leading-tight">${menuItems}</div>
+                <div class="text-xs text-slate-500 mt-5 font-bold text-right">${time}</div>
+                <button onclick="this.parentElement.remove()" class="absolute -top-3 -right-3 bg-red-600 w-10 h-10 rounded-full flex items-center justify-center font-bold text-white shadow-lg hover:scale-110 active:scale-95 transition-all">✕</button>
             `;
             queue.appendChild(card);
         }
 
-        function clearOrders() { if(confirm("ล้างคิวทั้งหมด?")) location.reload(); }
+        function clearOrders() { if(confirm("ต้องการล้างออเดอร์ทั้งหมดบนหน้าจอหรือไม่?")) location.reload(); }
     </script>
 </body>
 </html>
