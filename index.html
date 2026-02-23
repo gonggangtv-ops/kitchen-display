@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chef Dashboard - Order Pin Live</title>
+    <title>Kitchen Dashboard - The Bridge</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Prompt:wght@400;700;900&display=swap');
         body { font-family: 'Prompt', sans-serif; background-color: #020617; }
         .bill-card { 
-            min-width: 300px; max-width: 350px;
+            min-width: 320px; max-width: 380px;
             background: #1e293b; border-top: 10px solid #3b82f6;
             animation: fadeIn 0.4s ease-out;
         }
@@ -20,18 +20,16 @@
     <div class="max-w-full mx-auto">
         <div class="flex justify-between items-center mb-6 bg-slate-800 p-5 rounded-2xl border-b-4 border-blue-500 shadow-2xl">
             <div>
-                <h1 class="text-2xl font-black text-blue-400 uppercase">Kitchen Monitor (OrderPin.co)</h1>
-                <p id="status" class="text-green-400 font-bold italic text-sm">● ระบบพร้อมรับออเดอร์</p>
+                <h1 class="text-2xl font-black text-blue-400 uppercase tracking-tighter">Kitchen Live Monitor 3.0</h1>
+                <p id="status" class="text-green-400 font-bold italic text-sm">● CONNECTED & WAITING...</p>
             </div>
-            <div class="flex gap-2">
-                <button onclick="location.reload()" class="bg-slate-700 px-3 py-1 rounded-lg text-xs font-bold">RELOAD</button>
-                <button onclick="clearOrders()" class="bg-red-600/20 text-red-500 px-3 py-1 rounded-lg text-xs font-bold border border-red-500">CLEAR ALL</button>
-            </div>
+            <button onclick="location.reload()" class="bg-red-600/20 text-red-500 px-4 py-2 rounded-lg font-bold border border-red-500 hover:bg-red-600 hover:text-white transition-all text-xs">ล้างหน้าจอ</button>
         </div>
 
         <div id="orderQueue" class="flex flex-wrap gap-6 justify-start items-start pb-40">
             <div id="placeholder" class="text-slate-700 italic text-xl p-20 w-full text-center border-4 border-dashed border-slate-900 rounded-3xl">
-                รอออเดอร์จากหน้า POS... (กรุณาเปิดหน้า Order Pin ไว้ใน Tab ข้างๆ)
+                พร้อมรับออเดอร์จาก Order Pin...<br>
+                <span class="text-sm">(กรุณากดปุ่ม "เปิดจอในครัว" จากหน้า Order Pin)</span>
             </div>
         </div>
     </div>
@@ -40,33 +38,26 @@
         let API_KEY = localStorage.getItem('chef_api_key') || "";
         const MODEL = "gemini-1.5-flash";
 
-        // ระบบรับข้อมูลข้าม Domain ผ่าน LocalStorage
-        window.addEventListener('storage', (event) => {
-            if (event.key === 'latest_order_pin' && event.newValue) {
-                const data = JSON.parse(event.newValue);
-                processOrderData(data);
-                localStorage.removeItem('latest_order_pin'); // เคลียร์ทันทีป้องกันข้อมูลซ้ำ
+        // --- หัวใจสำคัญ: ระบบรับสัญญาณแบบตะโกนข้ามหน้าต่าง ---
+        window.addEventListener("message", (event) => {
+            if (event.data && event.data.type === "ORDER_PIN_DATA") {
+                console.log("📥 ได้รับออเดอร์ใหม่!");
+                processOrderData(event.data.data);
             }
-        });
-
-        // ระบบสำรอง: เช็คทุก 2 วินาที เผื่อ Event ไม่ทำงาน
-        setInterval(() => {
-            const saved = localStorage.getItem('latest_order_pin');
-            if (saved) {
-                processOrderData(JSON.parse(saved));
-                localStorage.removeItem('latest_order_pin');
-            }
-        }, 2000);
+        }, false);
 
         async function processOrderData(jsonData) {
             if(!API_KEY) {
-                API_KEY = prompt("ใส่ API Key ก่อนครับเชฟ:");
-                if(API_KEY) localStorage.setItem('chef_api_key', API_KEY);
+                API_KEY = prompt("กรุณาใส่ API Key ของเชฟครับ:");
+                if(API_KEY) {
+                    localStorage.setItem('chef_api_key', API_KEY.trim());
+                    location.reload();
+                }
                 return;
             }
 
             const status = document.getElementById('status');
-            status.innerText = "🌀 กำลังประมวลผล...";
+            status.innerText = "🌀 สรุปรายการอาหาร...";
             status.className = "text-yellow-400 font-bold italic animate-pulse";
 
             try {
@@ -75,23 +66,26 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         contents: [{ parts: [{ 
-                            text: `สรุปออเดอร์จาก JSON: บอกเลขโต๊ะและรายการอาหาร ห้ามใช้เครื่องหมาย () และ + รวมคำสั่งพิเศษต่อท้ายเมนู ข้อมูล: ${JSON.stringify(jsonData)}` 
+                            text: `สรุปบิล: บรรทัดแรกเลขโต๊ะ, บรรทัดต่อๆไปคือเมนูและคำสั่งพิเศษ (ห้ามใช้เครื่องหมาย () และ +) แยกแต่ละโต๊ะให้ชัดเจน ข้อมูล: ${JSON.stringify(jsonData)}` 
                         }] }]
                     })
                 });
+
                 const resData = await response.json();
                 const result = resData.candidates[0].content.parts[0].text.trim();
                 
                 if (document.getElementById('placeholder')) document.getElementById('placeholder').remove();
 
-                // แยกข้อมูลโต๊ะถ้า AI ส่งมาหลายโต๊ะ
-                const tables = result.split(/โต๊ะ|Table/gi).filter(t => t.trim().length > 3);
-                tables.forEach(t => addOrderToUI("โต๊ะ " + t.replace(/[()+]/g, ' ')));
+                // แยกข้อมูลถ้ามีหลายโต๊ะ
+                const tables = result.split(/โต๊ะ|Table/gi).filter(t => t.trim().length > 5);
+                tables.forEach(tableInfo => {
+                    addOrderToUI("โต๊ะ" + tableInfo.replace(/[()+]/g, ' '));
+                });
 
                 status.innerText = "● READY";
                 status.className = "text-green-400 font-bold italic";
             } catch (e) {
-                status.innerText = "❌ ERROR: เช็ค API Key";
+                status.innerText = "❌ AI Error: เช็ค Key หรือเน็ต";
             }
         }
 
@@ -99,21 +93,19 @@
             const queue = document.getElementById('orderQueue');
             const time = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
             const lines = text.split('\n').filter(l => l.trim() !== "");
-            const table = lines[0];
+            const tableNo = lines[0];
             const items = lines.slice(1).join('<br>');
 
             const card = document.createElement('div');
             card.className = "bill-card p-6 rounded-2xl shadow-2xl relative flex-none";
             card.innerHTML = `
-                <div class="text-4xl font-black text-yellow-400 border-b border-slate-700 mb-3 pb-1">${table}</div>
+                <div class="text-4xl font-black text-yellow-400 border-b-2 border-slate-700 mb-3 pb-2 uppercase">${tableNo}</div>
                 <div class="text-2xl font-bold text-white leading-tight">${items}</div>
-                <div class="text-xs text-slate-500 mt-4 text-right">${time}</div>
-                <button onclick="this.parentElement.remove()" class="absolute -top-2 -right-2 bg-red-600 w-8 h-8 rounded-full font-bold">✕</button>
+                <div class="text-xs text-slate-500 mt-5 font-bold text-right">${time}</div>
+                <button onclick="this.parentElement.remove()" class="absolute -top-3 -right-3 bg-red-600 w-10 h-10 rounded-full flex items-center justify-center font-bold text-white shadow-lg">✕</button>
             `;
             queue.appendChild(card);
         }
-
-        function clearOrders() { location.reload(); }
     </script>
 </body>
 </html>
