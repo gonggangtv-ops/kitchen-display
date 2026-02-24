@@ -2,110 +2,110 @@
 <html lang="th">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kitchen Dashboard - The Bridge</title>
+    <title>Chef Dashboard - Cloud Sync</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Prompt:wght@400;700;900&display=swap');
-        body { font-family: 'Prompt', sans-serif; background-color: #020617; }
+        body { font-family: 'Prompt', sans-serif; background-color: #020617; color: white; overflow-x: hidden; }
         .bill-card { 
             min-width: 320px; max-width: 380px;
-            background: #1e293b; border-top: 10px solid #3b82f6;
-            animation: fadeIn 0.4s ease-out;
+            background: #1e293b; border-top: 10px solid #3b82f6; 
+            border-radius: 1.5rem; animation: slideIn 0.3s ease-out;
         }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes slideIn { from { opacity: 0; transform: translateX(50px); } to { opacity: 1; transform: translateX(0); } }
     </style>
 </head>
-<body class="text-white p-4">
-    <div class="max-w-full mx-auto">
-        <div class="flex justify-between items-center mb-6 bg-slate-800 p-5 rounded-2xl border-b-4 border-blue-500 shadow-2xl">
-            <div>
-                <h1 class="text-2xl font-black text-blue-400 uppercase tracking-tighter">Kitchen Live Monitor 3.0</h1>
-                <p id="status" class="text-green-400 font-bold italic text-sm">● CONNECTED & WAITING...</p>
-            </div>
-            <button onclick="location.reload()" class="bg-red-600/20 text-red-500 px-4 py-2 rounded-lg font-bold border border-red-500 hover:bg-red-600 hover:text-white transition-all text-xs">ล้างหน้าจอ</button>
+<body class="p-6">
+    <div class="flex justify-between items-center mb-8 bg-slate-800 p-6 rounded-2xl border-b-4 border-blue-500 shadow-2xl">
+        <div>
+            <h1 class="text-3xl font-black text-blue-400 uppercase tracking-tighter">Kitchen Monitor (Cloud Mode)</h1>
+            <p id="status" class="text-green-400 font-bold italic text-sm">● ระบบกำลังเฝ้าดูออเดอร์จาก Cloud...</p>
         </div>
+        <div class="flex gap-4">
+            <button onclick="location.reload()" class="bg-slate-700 px-4 py-2 rounded-xl font-bold text-xs">RELOAD</button>
+            <button onclick="localStorage.removeItem('chef_api_key'); location.reload();" class="bg-slate-700 px-4 py-2 rounded-xl font-bold text-xs text-slate-400">RESET KEY</button>
+        </div>
+    </div>
 
-        <div id="orderQueue" class="flex flex-wrap gap-6 justify-start items-start pb-40">
-            <div id="placeholder" class="text-slate-700 italic text-xl p-20 w-full text-center border-4 border-dashed border-slate-900 rounded-3xl">
-                พร้อมรับออเดอร์จาก Order Pin...<br>
-                <span class="text-sm">(กรุณากดปุ่ม "เปิดจอในครัว" จากหน้า Order Pin)</span>
-            </div>
+    <div id="orderQueue" class="flex flex-wrap gap-6 items-start">
+        <div id="placeholder" class="w-full text-center py-20 text-slate-800 italic text-2xl border-4 border-dashed border-slate-900 rounded-3xl">
+            กำลังรอออเดอร์ใหม่จากหน้า Order Pin...
         </div>
     </div>
 
     <script>
         let API_KEY = localStorage.getItem('chef_api_key') || "";
-        const MODEL = "gemini-1.5-flash";
+        const WEBHOOK_ID = "d9de0127-8994-4253-bc6f-25d59d0b2b73";
+        let lastRequestID = "";
 
-        // --- หัวใจสำคัญ: ระบบรับสัญญาณแบบตะโกนข้ามหน้าต่าง ---
-        window.addEventListener("message", (event) => {
-            if (event.data && event.data.type === "ORDER_PIN_DATA") {
-                console.log("📥 ได้รับออเดอร์ใหม่!");
-                processOrderData(event.data.data);
-            }
-        }, false);
-
-        async function processOrderData(jsonData) {
+        async function checkCloudData() {
             if(!API_KEY) {
-                API_KEY = prompt("กรุณาใส่ API Key ของเชฟครับ:");
-                if(API_KEY) {
-                    localStorage.setItem('chef_api_key', API_KEY.trim());
-                    location.reload();
-                }
+                API_KEY = prompt("กรุณาใส่ Gemini API Key:");
+                if(API_KEY) localStorage.setItem('chef_api_key', API_KEY.trim());
                 return;
             }
 
-            const status = document.getElementById('status');
-            status.innerText = "🌀 สรุปรายการอาหาร...";
-            status.className = "text-yellow-400 font-bold italic animate-pulse";
-
             try {
-                const response = await fetch(`https://generativelanguage.googleapis.com/v1/models/${MODEL}:generateContent?key=${API_KEY}`, {
+                // ดึงรายการล่าสุดจาก Webhook.site API
+                const response = await fetch(`https://webhook.site/token/${WEBHOOK_ID}/requests?sorting=newest&limit=1`);
+                const result = await response.json();
+                
+                if (result.data && result.data.length > 0) {
+                    const latest = result.data[0];
+                    // ตรวจสอบว่าเป็นออเดอร์ใหม่ที่ไม่เคยประมวลผล
+                    if (latest.uuid !== lastRequestID) {
+                        lastRequestID = latest.uuid;
+                        processOrderData(JSON.parse(latest.content));
+                    }
+                }
+            } catch (e) { console.log("กำลังรอออเดอร์..."); }
+        }
+
+        async function processOrderData(jsonData) {
+            const status = document.getElementById('status');
+            status.innerText = "🌀 ได้รับข้อมูล! กำลังแปลผลด้วย AI...";
+            
+            try {
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${API_KEY}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         contents: [{ parts: [{ 
-                            text: `สรุปบิล: บรรทัดแรกเลขโต๊ะ, บรรทัดต่อๆไปคือเมนูและคำสั่งพิเศษ (ห้ามใช้เครื่องหมาย () และ +) แยกแต่ละโต๊ะให้ชัดเจน ข้อมูล: ${JSON.stringify(jsonData)}` 
+                            text: `สรุปบิลอาหาร: บรรทัดแรกเลขโต๊ะ, บรรทัดต่อมาคือรายการเมนูและจำนวน ห้ามใช้เครื่องหมาย () และ + ข้อมูลคือ: ${JSON.stringify(jsonData)}` 
                         }] }]
                     })
                 });
-
                 const resData = await response.json();
-                const result = resData.candidates[0].content.parts[0].text.trim();
+                const text = resData.candidates[0].content.parts[0].text.trim();
                 
                 if (document.getElementById('placeholder')) document.getElementById('placeholder').remove();
-
-                // แยกข้อมูลถ้ามีหลายโต๊ะ
-                const tables = result.split(/โต๊ะ|Table/gi).filter(t => t.trim().length > 5);
-                tables.forEach(tableInfo => {
-                    addOrderToUI("โต๊ะ" + tableInfo.replace(/[()+]/g, ' '));
-                });
-
-                status.innerText = "● READY";
-                status.className = "text-green-400 font-bold italic";
+                addOrderToUI(text);
+                status.innerText = "● READY - อัปเดตล่าสุดเมื่อครู่";
             } catch (e) {
-                status.innerText = "❌ AI Error: เช็ค Key หรือเน็ต";
+                status.innerText = "❌ AI ประมวลผลพลาด";
             }
         }
 
         function addOrderToUI(text) {
             const queue = document.getElementById('orderQueue');
             const time = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-            const lines = text.split('\n').filter(l => l.trim() !== "");
-            const tableNo = lines[0];
+            const lines = text.split('\n');
+            const table = lines[0];
             const items = lines.slice(1).join('<br>');
 
             const card = document.createElement('div');
-            card.className = "bill-card p-6 rounded-2xl shadow-2xl relative flex-none";
+            card.className = "bill-card p-6 relative shadow-2xl";
             card.innerHTML = `
-                <div class="text-4xl font-black text-yellow-400 border-b-2 border-slate-700 mb-3 pb-2 uppercase">${tableNo}</div>
+                <div class="text-4xl font-black text-yellow-400 border-b border-slate-700 mb-3 pb-1 uppercase">${table}</div>
                 <div class="text-2xl font-bold text-white leading-tight">${items}</div>
-                <div class="text-xs text-slate-500 mt-5 font-bold text-right">${time}</div>
-                <button onclick="this.parentElement.remove()" class="absolute -top-3 -right-3 bg-red-600 w-10 h-10 rounded-full flex items-center justify-center font-bold text-white shadow-lg">✕</button>
+                <div class="text-xs text-slate-500 mt-5 text-right font-bold">${time}</div>
+                <button onclick="this.parentElement.remove()" class="absolute -top-3 -right-3 bg-red-600 w-10 h-10 rounded-full font-bold shadow-lg hover:scale-110 active:scale-90 transition-all">✕</button>
             `;
             queue.appendChild(card);
         }
+
+        // เริ่มวนลูปเช็คข้อมูลทุก 5 วินาที
+        setInterval(checkCloudData, 5000);
     </script>
 </body>
 </html>
